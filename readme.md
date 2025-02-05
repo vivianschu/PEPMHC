@@ -1,3 +1,7 @@
+# PEPMHC
+A Siamese BERT model to predict peptide-HLA immunogenic binding.
+
+## About
 1. Peptide pretraining run files format: 'pretraining_LLM_{}_mlm_{}.out'.format(peptide_max_length, mask rate)
 2. Siamese BERT run files format: 'prot_bert_{}_{}_mlm_{}_{}.out'.format(peptide_max_length, mhc_max_length, mask_rate, previous training steps for peptide bert)
 if followed by 'new_split', then it represents new mhc split in train and test sets. 
