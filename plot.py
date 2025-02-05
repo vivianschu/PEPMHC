@@ -28,7 +28,6 @@ plt.grid()
 plt.show()
 '''
 
-
 epochs = []
 roc_aucs = []
 
