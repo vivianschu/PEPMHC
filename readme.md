@@ -1,6 +1,12 @@
 # PEPMHC
 A Siamese BERT model to predict peptide-HLA immunogenic binding.
 
+### Variable Params
+peptide_max_length [48]
+maximum MHC length [350]
+MLM masking ratio [0.25]
+last saved checkpoint step [44000]
+
 ## About
 1. Peptide pretraining run files format: 'pretraining_LLM_{}_mlm_{}.out'.format(peptide_max_length, mask rate)
 2. Siamese BERT run files format: 'prot_bert_{}_{}_mlm_{}_{}.out'.format(peptide_max_length, mhc_max_length, mask_rate, previous training steps for peptide bert)

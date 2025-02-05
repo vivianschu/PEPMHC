@@ -84,7 +84,7 @@ def compute_metrics(pred):
 
     return {
         'Accuracy': accuracy,
-        'precision': precision,
+        'precision': p recision,
         'Recall': recall,
         'F1': f1,
         'ROC_AUC': roc_auc,
