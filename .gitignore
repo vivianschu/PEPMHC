@@ -170,6 +170,8 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+# Training scripts
+*.share
 # Training logs
 wandb/
 */wandb/
