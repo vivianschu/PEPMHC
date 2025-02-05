@@ -71,6 +71,7 @@ epochs = config.epochs
 
 # Configure logging for INFO-level messages
 logging.basicConfig(level=logging.INFO)
+base="/scratch/ssd004/scratch/vchu/PEPMHC"
 
 def print_gpu_utilization():
     '''
@@ -187,86 +188,95 @@ def train():
             super().__init__()
             self.model1 = model1
             self.model2 = model2
+            # Final classifier that takes in [CLS] embeddings from both models
             self.classifier = nn.Linear(model1.config.hidden_size + model2.config.hidden_size, 2)
 
                 
-        def forward(self, pep_input_ids, pep_token_type_ids, pep_attention_mask, mhc_input_ids, mhc_token_type_ids, mhc_attention_mask, labels=None):
+        def forward(
+            self, 
+            pep_input_ids, pep_token_type_ids, pep_attention_mask,
+            mhc_input_ids, mhc_token_type_ids, mhc_attention_mask, 
+            labels=None
+        ):
 
-            outputs1 = self.model1(input_ids=pep_input_ids.squeeze(dim=1), token_type_ids=pep_token_type_ids.squeeze(dim=1), attention_mask=pep_attention_mask.squeeze(dim=1))
-            outputs2 = self.model2(input_ids=mhc_input_ids.squeeze(dim=1), token_type_ids=mhc_token_type_ids.squeeze(dim=1), attention_mask=mhc_attention_mask.squeeze(dim=1))
-
-
+            outputs1 = self.model1(
+                input_ids=pep_input_ids.squeeze(dim=1),
+                token_type_ids=pep_token_type_ids.squeeze(dim=1),
+                attention_mask=pep_attention_mask.squeeze(dim=1)
+            )
+            outputs2 = self.model2(
+                input_ids=mhc_input_ids.squeeze(dim=1),
+                token_type_ids=mhc_token_type_ids.squeeze(dim=1),
+                attention_mask=mhc_attention_mask.squeeze(dim=1)
+            )
+            
+            # Extract [CLS] token embedding from each model
             embeddings1 = outputs1.last_hidden_state[:, 0, :]
             embeddings2 = outputs2.last_hidden_state[:, 0, :]
-
-    
+            
+            # Concatenate embeddings and pass through linear layer
             combined_embeddings = torch.cat((embeddings1, embeddings2), dim=-1)
             logits = self.classifier(combined_embeddings)
+            
+            # If labels are provided, compute cross-entropy loss
             if labels is not None:
                 loss_fct = nn.CrossEntropyLoss()
                 loss = loss_fct(logits.view(-1, 2), labels.view(-1))
-
                 return (loss, logits)
-
             else:
                 return logits
 
-
-    
-
+    # Instantiate combined model which merges the two separate Transformer models
     combined_model = CombinedModel(model1, model2)
-
+    
+    # --- Custom Trainer ---
     class CustomTrainer(Trainer):
         def __init__(self, *args,  train_dataloader=None, eval_dataloader=None, **kwargs):
             super().__init__(*args, **kwargs)
             self.loss_function = nn.CrossEntropyLoss()
             self.train_dataloader = train_dataloader
             self.eval_dataloader = eval_dataloader
-
+        
+        # Override compute_loss to handle (loss, logits) outputs from CombinedModel
         def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
             outputs = model(**inputs)
             labels = inputs.pop("labels").long()
-     
-            loss = outputs[0]    
-            # loss = self.loss_function(outputs[1].view(-1, 2), labels.view(-1))
-
+            loss = outputs[0]   # CombinedModel returns (loss, logits)
+            
             return (loss, outputs) if return_outputs else loss
 
- 
-
-    save_path = "/scratch/ssd004/scratch/vchu/PEPMHC/output/pep_mhc/mlm_0.15_max_len_{}_mhc_350/scratch_180000_step/new_split/".format(args.pep_max_len)
+    # --- Training Arguments ---
+    save_path = f"{base}/output/pep_mhc/mlm_0.15_max_len_{}_mhc_350/scratch_180000_step/new_split/".format(args.pep_max_len)
     make_dir(save_path)
 
     training_args = TrainingArguments(
-            output_dir=save_path,         # Output directory for model checkpoints and predictions
-            overwrite_output_dir=True,             # Overwrite the output directory if it already exists
-            num_train_epochs=10,                # total number of training epochs
-            per_device_train_batch_size=train_batch_size,      # batch size per device during training
-            per_device_eval_batch_size=test_batch_size,       # batch size for evaluation
-            max_steps=int(3e5),
-            learning_rate=1e-05,                    # learning rate
-            warmup_steps=int(3e3),              # number of warmup steps for learning rate scheduler
-            weight_decay=0.01,                  # strength of weight decay
-            logging_dir='./logs',               # directory for storing logs
-            logging_steps=int(3e3),             # How often to print logs
+            output_dir=save_path,               # Directory for checkpoints/predictions
+            overwrite_output_dir=True,          # Overwrite the output dir if exists
+            num_train_epochs=epochs,                # Number of epochs to train
+            per_device_train_batch_size=train_batch_size,
+            per_device_eval_batch_size=test_batch_size,
+            max_steps=int(1e4),                 # Total training steps (can override epochs if reached first)
+            learning_rate=1e-05,                # Learning rate
+            warmup_steps=int(1e3),              # Steps to warm up LR
+            weight_decay=0.01,                  # Weight decay for regularizaiton
+            logging_dir='./logs',               # Log directory
+            logging_steps=int(1e2),             # Log every n steps
             do_train=True,                      # Perform training
             do_eval=True,                       # Perform evaluation
-            eval_steps = int(3e4),
-            evaluation_strategy="steps",        # evalute after eachh epoch
-            gradient_accumulation_steps=1,      # total number of steps before back propagation
-            save_steps=int(3e4),                # Save the model every n steps
-            save_total_limit=2,                 # Maximum number of model checkpoints to keep
+            eval_steps = int(1e3),              # Evaluation every n steps
+            evaluation_strategy="steps",        # Evaluate every few steps (not just every epoch)
+            gradient_accumulation_steps=1,      # Total number of steps before back propagation
+            save_steps=int(1e3),                # Save checkpoint every n steps
+            save_total_limit=2,                 # Keep only last n checkpoints
             fp16=True,                          # Use mixed precision
-            # fp16_opt_level="02",              # mixed precision mode
-            run_name="Two Model",               # experiment name
+            # fp16_opt_level="02",              # Mixed precision mode
+            run_name="Siamese",                 # Experiment name
             metric_for_best_model="loss",       # Metric to select the best model
             # local_rank=int(os.environ["LOCAL_RANK"]),
-            seed=3                              # Seed for experiment reproducibility 3x3
-            
+            seed=3                              # Seed for experiment reproducibility
     )
 
-
-
+    # --- Trainer Instance ---
     trainer = CustomTrainer(
         model=combined_model,
         args=training_args,
@@ -275,11 +285,9 @@ def train():
         compute_metrics=compute_metrics,
     )
 
-
-    # Step 7: Fine-tune the custom model using the Trainer.train() method
-
+    # --- Train the model ---
     result = trainer.train()
-
+    # Print training summary (time, samples/sec, GPU usage)
     print_summary(result)
 
 
@@ -291,7 +299,6 @@ def train():
 
 
 if __name__ == "__main__":
- 
     train()
 
 
