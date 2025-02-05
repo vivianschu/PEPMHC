@@ -5,18 +5,42 @@ import argparse
 from rich.progress import track
 from data_loader import get_dataset, IEDB_raw
 import config
-from sklearn.metrics import accuracy_score, precision_score, recall_score, roc_auc_score, average_precision_score, f1_score, precision_recall_curve, confusion_matrix
+
+# Metrics and stats
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+    average_precision_score,
+    f1_score,
+    precision_recall_curve,
+    confusion_matrix,
+    precision_recall_fscore_support
+)
 from scipy.stats import pearsonr, spearmanr
+
+# PyTorch and utilities
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 # from tensorboardX import SummaryWriter
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
-import matplotlib.pyplot as plt
-import numpy as np
-from transformers import BertForMaskedLM, BertTokenizer, pipeline, AutoTokenizer, Trainer, TrainingArguments, AutoModelForSequenceClassification
-from transformers import AutoTokenizer, AutoModel, Trainer, TrainingArguments
+
+# Hugging Face Transformers
+from transformers import (
+    BertForMaskedLM,
+    BertTokenizer,
+    pipeline,
+    AutoTokenizer,
+    Trainer,
+    TrainingArguments,
+    AutoModelForSequenceClassification
+)
+
+# Custom data loader and distributed training
 import data_loader
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -26,58 +50,73 @@ import argparse
 from pynvml import *
 import logging
 
+# Parse commmand-line arguments
 parser = parsing.create_parser()
 args = parser.parse_args()
 state = {k: v for k, v in args._get_kwargs()}
 
-# if __name__ == "__main__":
-torch.manual_seed(3)  # for reproducibility
+# Set manual seed for reproducibility
+torch.manual_seed(3)
 
+# Create directory if doesn't exist
 def make_dir(path):
     if not os.path.exists(path):
         os.makedirs(path)
     else:
         pass
 
+# Fetch device and number of epochs
+device = config.device
+epochs = config.epochs
 
-# device = config.device
-# epochs = config.epochs
-
+# Configure logging for INFO-level messages
 logging.basicConfig(level=logging.INFO)
 
 def print_gpu_utilization():
+    '''
+    Print current GPU memory usage
+    '''
     nvmlInit()
     handle = nvmlDeviceGetHandleByIndex(0)
     info = nvmlDeviceGetMemoryInfo(handle)
     print(f"GPU memory occupied: {info.used//1024**2} MB.")
 
-
 def print_summary(result):
+    '''
+    Summarize stats from Trainer result
+    (time, samples/sec, GPU usage)
+    '''
     print(f"Time: {result.metrics['train_runtime']:.2f}")
     print(f"Samples/second: {result.metrics['train_samples_per_second']:.2f}")
     print_gpu_utilization()
 
-
-
 def init_process_group(local_rank):
+    '''
+    Initialize distributed process group (NCCL backend) for multi-GPU setup
+    '''
     dist.init_process_group(backend="nccl")
     torch.cuda.set_device(local_rank)
 
-
 def compute_metrics(pred):
+    '''
+    Custom metric function for eval
+    '''
+    # Extract labels and predictions
     labels = pred.label_ids
     preds = pred.predictions.argmax(-1)
     print(labels, pred.predictions.argmax(-1))
 
-
+    # Calculate metrics
     accuracy = accuracy_score(labels, preds)
     precision = precision_score(labels, preds)
     recall = recall_score(labels, preds)
     f1 = f1_score(labels, preds)
     roc_auc = roc_auc_score(labels, preds)
     prc_auc = average_precision_score(labels, preds)
+    # Pearson and spearman correlations
     pcc, p = pearsonr(labels, preds)
     srcc, p = spearmanr(labels, preds)
+    # Confusion matrix for sensitivity/PPV
     tn, fp, fn, tp = confusion_matrix(labels, preds).ravel()
     sensitivity = float(tp)/(tp+fn)
     PPV = float(tp)/(tp+fp)
@@ -95,34 +134,37 @@ def compute_metrics(pred):
         'SRCC': srcc
     }
 
-
-
-
-
 def train():
-
-   
-
-    train_dataset = data_loader.IEDB_PEP_MHC(split="train", pep_max_len=args.pep_max_len, new_split_flag=args.new_split_flag)
-    test_dataset = data_loader.IEDB_PEP_MHC(split="test",   pep_max_len=args.pep_max_len, new_split_flag=args.new_split_flag)
+    '''
+    Main train function
+    '''
+    # --- Data Loading ---
+    # Create train and test dataset using custom IEDB_PEP_MHC Dataset class
+    train_dataset = data_loader.IEDB_PEP_MHC(
+        split="train",
+        pep_max_len=args.pep_max_len,
+        new_split_flag=args.new_split_flag
+    )
+    test_dataset = data_loader.IEDB_PEP_MHC(
+        split="test",
+        pep_max_len=args.pep_max_len,
+        new_split_flag=args.new_split_flag
+    )
 
     print(len(train_dataset), len(test_dataset))
 
     train_batch_size = 16
     test_batch_size = 16
-
-
-
-    # base_path= '/home/patrick3/projects/def-wanglab-ab/patrick3/output_directory/pep/lr_0.001/'
-    # base_path= '/home/patrick3/scratch/output_directory/pep/lr_e_5/max_len_{}/'.format(args.pep_max_len)
-
+    
+    # --- Model Checkpoint Paths ---
+    # Different base paths dependent on if args.scratch is True
     if args.scratch: 
         base_path= '/scratch/ssd004/scratch/vchu/PEPMHC/output/pep_scratch/lr_e_5/mlm_0.15/max_len_{}/500_epochs/'.format(args.pep_max_len)
     else:
-        # base_path= '/home/patrick3/scratch/output_directory/pep/lr_e_5/mlm_0.15/max_len_{}/500_epochs/'.format(args.pep_max_len)
         base_path= '/scratch/ssd004/scratch/vchu/PEPMHC/output/pep/lr_e_5/max_len_{}/'.format(args.pep_max_len)
     
-    
+    # --- Current Model ---
+    # If using a pretrained model, else try loading a different cehckpoint
     if args.pretrained:           
         model_name1 = 'Rostlab/prot_bert_bfd'
     else: 
@@ -132,14 +174,14 @@ def train():
         else:
             print(f"Checkpoint not found at {checkpoint_path}. Falling back to 'Rostlab/prot_bert_bfd'.")
             model_name1 = 'Rostlab/prot_bert_bfd'
-
+    
+    # Second model uses Rostlab/prot_bert_bfd
     model_name2 = 'Rostlab/prot_bert_bfd'
-
+    # Load two backbone models from HuggingFace 
     model1 = AutoModel.from_pretrained(model_name1)
     model2 = AutoModel.from_pretrained(model_name2)
-
-
-
+    
+    # --- Combined Model ---
     class CombinedModel(nn.Module):
         def __init__(self, model1, model2):
             super().__init__()
