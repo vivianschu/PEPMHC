@@ -160,9 +160,9 @@ def train():
     # --- Model Checkpoint Paths ---
     # Different base paths dependent on if args.scratch is True
     if args.scratch: 
-        base_path= '/scratch/ssd004/scratch/vchu/PEPMHC/output/pep_scratch/lr_e_5/mlm_0.15/max_len_{}/500_epochs/'.format(args.pep_max_len)
+        base_path= f'{base}/output/pep_scratch/lr_e_5/mlm_0.15/max_len_{}/500_epochs/'.format(args.pep_max_len)
     else:
-        base_path= '/scratch/ssd004/scratch/vchu/PEPMHC/output/pep/lr_e_5/max_len_{}/'.format(args.pep_max_len)
+        base_path= f'{base}/output/pep/lr_e_5/max_len_{}/'.format(args.pep_max_len)
     
     # --- Current Model ---
     # If using a pretrained model, else try loading a different cehckpoint
@@ -246,7 +246,7 @@ def train():
             return (loss, outputs) if return_outputs else loss
 
     # --- Training Arguments ---
-    save_path = f"{base}/output/pep_mhc/mlm_0.15_max_len_{}_mhc_350/scratch_180000_step/new_split/".format(args.pep_max_len)
+    save_path = f"{base}/output/pepmhc/mlm_0.15_max_len_{}_mhc_350/scratch_180000_step/new_split/".format(args.pep_max_len)
     make_dir(save_path)
 
     training_args = TrainingArguments(
@@ -263,7 +263,7 @@ def train():
             logging_steps=int(1e2),             # Log every n steps
             do_train=True,                      # Perform training
             do_eval=True,                       # Perform evaluation
-            eval_steps = int(1e3),              # Evaluation every n steps
+            eval_steps = int(1e2),              # Evaluation every n steps
             evaluation_strategy="steps",        # Evaluate every few steps (not just every epoch)
             gradient_accumulation_steps=1,      # Total number of steps before back propagation
             save_steps=int(1e3),                # Save checkpoint every n steps

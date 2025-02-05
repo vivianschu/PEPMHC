@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=test_protbert
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:4
 #SBATCH --partition=t4v1,t4v2,a40
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=12               # Number of CPUs per task (adjust as needed)
@@ -11,4 +11,6 @@
 module load cuda-11.8
 echo $(nvcc --version)
 
-python3 /scratch/ssd004/scratch/vchu/PEPMHC/MHCAttnNet_ft/src/train_protbert_ft_fast.py --pep-max-len 48 --new-split-flag 
+python3 /scratch/ssd004/scratch/vchu/PEPMHC/MHCAttnNet_ft/src/train_protbert_ft_fast.py \
+    --pep-max-len 48 \
+    --new-split-flag
