@@ -1,0 +1,26 @@
+name: neo_2
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - ipython
+  - numpy<2.0.0
+  - pandas
+  - pytorch
+  - scipy
+  - scikit-learn
+  - appdirs
+  - huggingface_hub<0.23.0
+  - wandb
+  - pynvml
+  - rich
+  - requests
+  - tqdm
+  - importlib-metadata
+  - pip:
+    - torchtext==0.6
+    - sentence-transformers
+    - transformers
+    - aiohttp
+    - accelerate

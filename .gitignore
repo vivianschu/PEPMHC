@@ -169,3 +169,18 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Training logs
+wandb/
+*/wandb/
+logs/
+*/logs/
+*.out
+
+# Data
+LLM/data/
+MHCAttnNet_dataset/
+MHCAttnNet_ft/data/
+
+# Output
+output/
