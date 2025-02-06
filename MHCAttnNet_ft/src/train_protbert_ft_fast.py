@@ -73,6 +73,7 @@ epochs = config.epochs
 # Configure logging for INFO-level messages
 logging.basicConfig(level=logging.INFO)
 base="/scratch/ssd004/scratch/vchu/PEPMHC"
+last_ckpt="0"
 
 def print_gpu_utilization():
     '''
@@ -170,7 +171,7 @@ def train():
     if args.pretrained:           
         model_name1 = 'Rostlab/prot_bert_bfd'
     else: 
-        checkpoint_path = base_path + 'checkpoint-{}'.format(44000)
+        checkpoint_path = base_path + f'checkpoint-{last_ckpt}'
         if os.path.exists(checkpoint_path):
             model_name1 = checkpoint_path
         else:
@@ -183,6 +184,12 @@ def train():
     model1 = AutoModel.from_pretrained(model_name1)
     model2 = AutoModel.from_pretrained(model_name2)
     
+    # Freeze parameters of both backbone models to avoid updating them during training
+    for param in model1.parameters():
+        param.requires_grad = False
+    for param in model2.parameters():
+        param.requires_grad = False
+
     # --- Combined Model ---
     class CombinedModel(nn.Module):
         def __init__(self, model1, model2):
@@ -192,7 +199,6 @@ def train():
             # Final classifier that takes in [CLS] embeddings from both models
             self.classifier = nn.Linear(model1.config.hidden_size + model2.config.hidden_size, 2)
 
-                
         def forward(
             self, 
             pep_input_ids, pep_token_type_ids, pep_attention_mask,
@@ -226,7 +232,7 @@ def train():
                 return (loss, logits)
             else:
                 return logits
-
+    
     # Instantiate combined model which merges the two separate Transformer models
     combined_model = CombinedModel(model1, model2)
     
@@ -247,39 +253,43 @@ def train():
             return (loss, outputs) if return_outputs else loss
 
     # --- Training Arguments ---
-    save_path = f"{base}/output/pepmhc/mlm_0.15_max_len_{args.pep_max_len}_mhc_350/scratch_180000_step/new_split/"
+    save_path = f"{base}/output/pepmhc/mlm_0.15_max_len_{args.pep_max_len}_mhc_350/scratch_180000_step/new_split_fast/"
     make_dir(save_path)
 
     training_args = TrainingArguments(
             output_dir=save_path,               # Directory for checkpoints/predictions
             overwrite_output_dir=True,          # Overwrite the output dir if exists
             num_train_epochs=epochs,                # Number of epochs to train
+            dataloader_num_workers=4,
             per_device_train_batch_size=train_batch_size,
             per_device_eval_batch_size=test_batch_size,
-            max_steps=int(1e4),                 # Total training steps (can override epochs if reached first)
+            max_steps=int(5000),                 # Total training steps (can override epochs if reached first)
             learning_rate=1e-05,                # Learning rate
             warmup_steps=int(1e3),              # Steps to warm up LR
             weight_decay=0.01,                  # Weight decay for regularizaiton
             logging_dir='./logs',               # Log directory
-            logging_steps=int(1e2),             # Log every n steps
+            logging_steps=int(1e3),             # Log every n steps
             do_train=True,                      # Perform training
             do_eval=True,                       # Perform evaluation
-            eval_steps = int(1e2),              # Evaluation every n steps
+            eval_steps = int(5e3),              # Evaluation every n steps
             evaluation_strategy="steps",        # Evaluate every few steps (not just every epoch)
             gradient_accumulation_steps=1,      # Total number of steps before back propagation
             save_steps=int(1e3),                # Save checkpoint every n steps
             save_total_limit=2,                 # Keep only last n checkpoints
-            fp16=True,                          # Use mixed precision
+            bf16=True,
+            # fp16=True,                          # Use mixed precision
             # fp16_opt_level="02",              # Mixed precision mode
             run_name="Siamese",                 # Experiment name
             metric_for_best_model="loss",       # Metric to select the best model
             # local_rank=int(os.environ["LOCAL_RANK"]),
             seed=3                              # Seed for experiment reproducibility
     )
-
+    # --- Compile model ----
+    compiled_model = torch.compile(combined_model)
+    
     # --- Trainer Instance ---
     trainer = CustomTrainer(
-        model=combined_model,
+        model=compiled_model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
@@ -291,80 +301,5 @@ def train():
     # Print training summary (time, samples/sec, GPU usage)
     print_summary(result)
 
-
-    # Load model from checkpoint
-    
-    # checkpoint = './checkpoint'  # Replace with your checkpoint directory
-    # model = BertForSequenceClassification.from_pretrained(checkpoint)
-    # trainer.model = model
-
-
 if __name__ == "__main__":
     train()
-
-
-
-
-
-
-
-# def model_init():
-#     # local_rank = torch.distributed.get_rank()
-#     # torch.cuda.set_device(local_rank)
-#     model= AutoModelForSequenceClassification.from_pretrained(model_name)
-#     return  model
-#     # return  nn.parallel.DistributedDataParallel(model, device_ids=[local_rank])
-
-
-
-# tokenizer_list= ['Rostlab/prot_bert_bfd', 'Rostlab/prot_bert']
-# pep_model_name = '/home/patrick3/projects/def-wanglab-ab/patrick3/output_directory/pep/checkpoint-4500/'
-# mhc_model_name = 'Rostlab/prot_bert_bfd'
-
-
-
-# for tokenizer_name in tokenizer_list:
-
-#     if config.USE_MHC_SPLIT==True:
-#         from data_loader_new_split import IEDB_raw
-#         train_dataset = IEDB_raw(split="train", tokenizer_name=tokenizer_name, max_length=512)
-#         test_dataset  = IEDB_raw(split="test",  tokenizer_name=tokenizer_name, max_length=512)
-#     else:
-#         train_dataset = IEDB_raw(split="train", tokenizer_name=tokenizer_name, max_length=512)
-#         test_dataset  = IEDB_raw(split="test",  tokenizer_name=tokenizer_name, max_length=512)
-
-
-
-#     training_args = TrainingArguments(
-#         output_dir='./results/'+model_name,      # output directory
-#         num_train_epochs=5,                     # total number of training epochs
-#         per_device_train_batch_size=4,          # batch size per device during training
-#         per_device_eval_batch_size=10,          # batch size for evaluation
-#         warmup_steps=1000,                      # number of warmup steps for learning rate scheduler
-#         learning_rate=2e-05,                    # learning rate
-#         weight_decay=0.01,                      # strength of weight decay
-#         logging_dir='./logs',                   # directory for storing logs
-#         logging_steps=2000,                    # How often to print logs
-#         do_train=True,                          # Perform training
-#         do_eval=True,                           # Perform evaluation
-#         evaluation_strategy="epoch",            # evalute after eachh epoch
-#         gradient_accumulation_steps=64,         # total number of steps before back propagation
-#         fp16=True,                              # Use mixed precision
-#         fp16_opt_level="02",                    # mixed precision mode
-#         run_name=model_name.strip('Rostlab/'),  # experiment name
-#         seed=3,                                  # Seed for experiment reproducibility 3x3
-#         # Additional arguments for distributed training
-#         local_rank=int(os.environ["LOCAL_RANK"]),
-#     )
-
-#     trainer = Trainer(
-#         model_init=model_init,                  # the instantiated 🤗 Transformers model to be trained
-#         args=training_args,                     # training arguments, defined above
-#         train_dataset=train_dataset,            # training dataset
-#         eval_dataset=test_dataset,              # evaluation dataset
-#         compute_metrics = compute_metrics,      # evaluation metrics
-#     )
-
-#     trainer.train()
-
-#     torch.cuda.empty_cache()

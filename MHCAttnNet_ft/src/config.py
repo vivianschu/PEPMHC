@@ -8,7 +8,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ckpt_num = 1                # Save model checkpoint every n epochs
 epochs = 5                  # Total number of training epochs
-batch_size = 32             # Batch size during training/inference
+batch_size = 64             # Batch size during training/inference
 
 # Store/load model checkpoint
 model_name = "/scratch/ssd004/scratch/vchu/PEPMHC/MHCAttnNet_dataset/models/classI/check.pt"
