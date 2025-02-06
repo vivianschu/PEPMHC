@@ -2,12 +2,15 @@ name: neo_2
 channels:
   - conda-forge
   - defaults
+  - nvidia
 dependencies:
   - python=3.9
   - ipython
   - numpy<2.0.0
   - pandas
   - pytorch
+  - torchvision
+  - cudatoolkit=11.8
   - scipy
   - scikit-learn
   - appdirs

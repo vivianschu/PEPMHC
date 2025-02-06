@@ -51,6 +51,10 @@ import argparse
 from pynvml import *
 import logging
 
+# Confirm running cuda
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+
 # Parse commmand-line arguments
 parser = parsing.create_parser()
 args = parser.parse_args()
@@ -67,7 +71,6 @@ def make_dir(path):
         pass
 
 # Fetch device and number of epochs
-device = config.device
 epochs = config.epochs
 
 # Configure logging for INFO-level messages
@@ -141,6 +144,7 @@ def train():
     '''
     Main train function
     '''
+    print("Starting training...")
     # --- Data Loading ---
     # Create train and test dataset using custom IEDB_PEP_MHC Dataset class
     train_dataset = data_loader.IEDB_PEP_MHC(
@@ -183,12 +187,6 @@ def train():
     # Load two backbone models from HuggingFace 
     model1 = AutoModel.from_pretrained(model_name1)
     model2 = AutoModel.from_pretrained(model_name2)
-    
-    # Freeze parameters of both backbone models to avoid updating them during training
-    for param in model1.parameters():
-        param.requires_grad = False
-    for param in model2.parameters():
-        param.requires_grad = False
 
     # --- Combined Model ---
     class CombinedModel(nn.Module):
@@ -199,6 +197,7 @@ def train():
             # Final classifier that takes in [CLS] embeddings from both models
             self.classifier = nn.Linear(model1.config.hidden_size + model2.config.hidden_size, 2)
 
+                
         def forward(
             self, 
             pep_input_ids, pep_token_type_ids, pep_attention_mask,
@@ -253,14 +252,13 @@ def train():
             return (loss, outputs) if return_outputs else loss
 
     # --- Training Arguments ---
-    save_path = f"{base}/output/pepmhc/mlm_0.15_max_len_{args.pep_max_len}_mhc_350/scratch_180000_step/new_split_fast/"
+    save_path = f"{base}/output/pepmhc/mlm_0.15_max_len_{args.pep_max_len}_mhc_350/scratch_180000_step/new_split/"
     make_dir(save_path)
 
     training_args = TrainingArguments(
             output_dir=save_path,               # Directory for checkpoints/predictions
             overwrite_output_dir=True,          # Overwrite the output dir if exists
             num_train_epochs=epochs,                # Number of epochs to train
-            dataloader_num_workers=4,
             per_device_train_batch_size=train_batch_size,
             per_device_eval_batch_size=test_batch_size,
             max_steps=int(5000),                 # Total training steps (can override epochs if reached first)
@@ -284,12 +282,10 @@ def train():
             # local_rank=int(os.environ["LOCAL_RANK"]),
             seed=3                              # Seed for experiment reproducibility
     )
-    # --- Compile model ----
-    compiled_model = torch.compile(combined_model)
-    
+
     # --- Trainer Instance ---
     trainer = CustomTrainer(
-        model=compiled_model,
+        model=combined_model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,

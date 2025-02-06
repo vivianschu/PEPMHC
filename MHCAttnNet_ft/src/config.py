@@ -3,7 +3,6 @@ import math
 import torch
 import torchtext
 
-# Select device: CUDA if available, else CPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ckpt_num = 1                # Save model checkpoint every n epochs
