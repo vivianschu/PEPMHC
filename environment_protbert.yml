@@ -1,4 +1,4 @@
-name: neo_2
+name: neo_3
 channels:
   - conda-forge
   - defaults
@@ -8,9 +8,6 @@ dependencies:
   - ipython
   - numpy<2.0.0
   - pandas
-  - pytorch
-  - torchvision
-  - cudatoolkit=11.8
   - scipy
   - scikit-learn
   - appdirs
@@ -18,12 +15,13 @@ dependencies:
   - wandb
   - pynvml
   - rich
+  - matplotlib
   - requests
   - tqdm
+  - pip
   - importlib-metadata
   - pip:
-    - torchtext==0.6
-    - sentence-transformers
-    - transformers
     - aiohttp
     - accelerate
+    - sentence-transformers
+    - transformers

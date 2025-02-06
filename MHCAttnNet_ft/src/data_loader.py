@@ -16,14 +16,12 @@ from transformers import BertForMaskedLM, BertTokenizer, pipeline, AutoTokenizer
 from transformers import BertModel, BertTokenizer
 from transformers import Trainer, TrainingArguments, AutoModelForSequenceClassification, AutoTokenizer, AutoModel, pipeline
 from torch.utils.data import Dataset, IterableDataset
-import pandas as pd
 import requests
 from tqdm import tqdm
-import numpy as np
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 import re
 from rich.progress import track
-
+from sentence_transformers import SentenceTransformer, InputExample, losses
 import config
 
 
@@ -32,8 +30,6 @@ def tokenize_pep(seq):
 
 def tokenize_mhc(seq):
     return list(map("".join, zip(*[iter(seq)]*config.mhc_n)))
-
-
 
 class IEDB_PEP_MHC(Dataset):
 
@@ -522,12 +518,6 @@ class IEDB_feat_pmhc(Dataset): # output [seq, 1024]
 
 
         return pep_data, mhc_data, label
-
-
-
-
-
-from sentence_transformers import SentenceTransformer, InputExample, losses
 
 def train_examples(model_name):
 

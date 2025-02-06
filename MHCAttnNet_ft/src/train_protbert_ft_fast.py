@@ -52,6 +52,8 @@ from pynvml import *
 import logging
 
 # Confirm running cuda
+# torch.backends.cuda.flash_sdp_enabled = False
+# torch.backends.cuda.mem_efficient_sdp_enabled = False
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
@@ -197,30 +199,61 @@ def train():
             # Final classifier that takes in [CLS] embeddings from both models
             self.classifier = nn.Linear(model1.config.hidden_size + model2.config.hidden_size, 2)
 
-                
         def forward(
             self, 
             pep_input_ids, pep_token_type_ids, pep_attention_mask,
             mhc_input_ids, mhc_token_type_ids, mhc_attention_mask, 
             labels=None
         ):
+            # Debug: Print shapes for peptide inputs before squeezing
+            # print("Peptide input shapes BEFORE squeeze:")
+            # print("pep_input_ids:", pep_input_ids.shape)
+            # print("pep_token_type_ids:", pep_token_type_ids.shape)
+            # print("pep_attention_mask:", pep_attention_mask.shape)
+            
+            # Squeeze peptide inputs
+            pep_input_ids = pep_input_ids.squeeze(dim=1)
+            pep_token_type_ids = pep_token_type_ids.squeeze(dim=1)
+            pep_attention_mask = pep_attention_mask.squeeze(dim=1)
+            
+            # Debug: Print shapes for peptide inputs after squeezing
+            # print("Peptide input shapes AFTER squeeze:")
+            # print("pep_input_ids:", pep_input_ids.shape)
+            # print("pep_token_type_ids:", pep_token_type_ids.shape)
+            # print("pep_attention_mask:", pep_attention_mask.shape)
 
+            # Debug: Print shapes for MHC inputs before squeezing
+            # print("MHC input shapes BEFORE squeeze:")
+            # print("mhc_input_ids:", mhc_input_ids.shape)
+            # print("mhc_token_type_ids:", mhc_token_type_ids.shape)
+            # print("mhc_attention_mask:", mhc_attention_mask.shape)
+            
+            # Squeeze MHC inputs
+            mhc_input_ids = mhc_input_ids.squeeze(dim=1)
+            mhc_token_type_ids = mhc_token_type_ids.squeeze(dim=1)
+            mhc_attention_mask = mhc_attention_mask.squeeze(dim=1)
+            
+            # Debug: Print shapes for MHC inputs after squeezing
+            # print("MHC input shapes AFTER squeeze:")
+            # print("mhc_input_ids:", mhc_input_ids.shape)
+            # print("mhc_token_type_ids:", mhc_token_type_ids.shape)
+            # print("mhc_attention_mask:", mhc_attention_mask.shape)
+
+            # Forward pass through the backbone models
             outputs1 = self.model1(
-                input_ids=pep_input_ids.squeeze(dim=1),
-                token_type_ids=pep_token_type_ids.squeeze(dim=1),
-                attention_mask=pep_attention_mask.squeeze(dim=1)
+                input_ids=pep_input_ids,
+                token_type_ids=pep_token_type_ids,
+                attention_mask=pep_attention_mask
             )
             outputs2 = self.model2(
-                input_ids=mhc_input_ids.squeeze(dim=1),
-                token_type_ids=mhc_token_type_ids.squeeze(dim=1),
-                attention_mask=mhc_attention_mask.squeeze(dim=1)
+                input_ids=mhc_input_ids,
+                token_type_ids=mhc_token_type_ids,
+                attention_mask=mhc_attention_mask
             )
             
-            # Extract [CLS] token embedding from each model
+            # Extract [CLS] token embeddings and concatenate them
             embeddings1 = outputs1.last_hidden_state[:, 0, :]
             embeddings2 = outputs2.last_hidden_state[:, 0, :]
-            
-            # Concatenate embeddings and pass through linear layer
             combined_embeddings = torch.cat((embeddings1, embeddings2), dim=-1)
             logits = self.classifier(combined_embeddings)
             
@@ -261,7 +294,7 @@ def train():
             num_train_epochs=epochs,                # Number of epochs to train
             per_device_train_batch_size=train_batch_size,
             per_device_eval_batch_size=test_batch_size,
-            max_steps=int(5000),                 # Total training steps (can override epochs if reached first)
+            max_steps=int(1e6),                 # Total training steps (can override epochs if reached first)
             learning_rate=1e-05,                # Learning rate
             warmup_steps=int(1e3),              # Steps to warm up LR
             weight_decay=0.01,                  # Weight decay for regularizaiton
@@ -269,14 +302,13 @@ def train():
             logging_steps=int(1e3),             # Log every n steps
             do_train=True,                      # Perform training
             do_eval=True,                       # Perform evaluation
-            eval_steps = int(5e3),              # Evaluation every n steps
+            eval_steps = int(1e4),              # Evaluation every n steps
             evaluation_strategy="steps",        # Evaluate every few steps (not just every epoch)
             gradient_accumulation_steps=1,      # Total number of steps before back propagation
-            save_steps=int(1e3),                # Save checkpoint every n steps
+            save_steps=int(1e4),                # Save checkpoint every n steps
             save_total_limit=2,                 # Keep only last n checkpoints
-            bf16=True,
-            # fp16=True,                          # Use mixed precision
-            # fp16_opt_level="02",              # Mixed precision mode
+            fp16=True,                          # Use mixed precision
+            fp16_opt_level="02",              # Mixed precision mode
             run_name="Siamese",                 # Experiment name
             metric_for_best_model="loss",       # Metric to select the best model
             # local_rank=int(os.environ["LOCAL_RANK"]),

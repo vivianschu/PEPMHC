@@ -5,8 +5,8 @@ import torchtext
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-ckpt_num = 1                # Save model checkpoint every n epochs
-epochs = 5                  # Total number of training epochs
+ckpt_num = 5                # Save model checkpoint every n epochs
+epochs = 50                 # Total number of training epochs
 batch_size = 64             # Batch size during training/inference
 
 # Store/load model checkpoint
